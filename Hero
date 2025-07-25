@@ -1,0 +1,210 @@
+<!DOCTYPE html><html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hero Platform Game</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%; height: 100%; font-family: sans-serif;
+      background: #000; color: white; overflow: hidden;
+    }
+    canvas {
+      display: none; margin: auto;
+      background-size: cover;
+    }
+    #loginBox, #menuScreen, #cutsceneBox, #shopBox {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.8);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 5;
+    }
+    #loginBox input, #loginBox button,
+    #menuScreen button, #shopBox button {
+      padding: 10px 20px; margin: 10px;
+      font-size: 18px; border-radius: 5px;
+    }
+    #controls {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 10px; z-index: 3;
+    }
+    .btn {
+      width: 60px; height: 60px; font-size: 24px;
+      background: rgba(255,255,255,0.2); color: white;
+      border: 2px solid white; border-radius: 50%;
+    }
+    #hud {
+      position: absolute; top: 10px; left: 10px; z-index: 4;
+      display: flex; gap: 8px;
+    }
+    .power-icon {
+      width: 32px; height: 32px;
+      background: white; color: black;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: bold; border-radius: 4px;
+    }
+    .shop-item { margin: 10px; padding: 10px; background: #222; border: 1px solid #555; border-radius: 5px; }
+  </style>
+</head>
+<body>
+  <div id="menuScreen">
+    <h1>Jogo do Herói</h1>
+    <button onclick="showLogin()">Iniciar</button>
+    <button onclick="openShop()">Loja</button>
+    <button onclick="alert('Configurações em breve')">Configurações</button>
+  </div>  <div id="loginBox" style="display: none">
+    <input type="text" id="username" placeholder="Nome de usuário">
+    <button onclick="login()">Entrar</button>
+    <div id="welcome"></div>
+  </div>  <div id="cutsceneBox" style="display:none">
+    <audio id="cutsceneMusic" autoplay></audio>
+    <p id="cutsceneText" style="padding: 20px; font-size: 20px; text-align: center"></p>
+    <button onclick="closeCutscene()">Continuar</button>
+  </div>  <div id="shopBox" style="display:none">
+    <h2>Loja de Upgrades</h2>
+    <div>
+      <button onclick="showCategory('vida')">💖 Vida</button>
+      <button onclick="showCategory('dano')">🗡️ Dano</button>
+      <button onclick="showCategory('arma')">🔫 Armas</button>
+    </div>
+    <div id="shopItems"></div>
+    <button onclick="closeShop()">Fechar</button>
+    <audio id="shopSound" src="https://www.myinstants.com/media/sounds/coin.mp3"></audio>
+  </div>  <div id="hud"></div>
+  <canvas id="gameCanvas" width="800" height="500"></canvas>  <div id="controls">
+    <button class="btn" ontouchstart="keys['ArrowLeft']=true" ontouchend="keys['ArrowLeft']=false">←</button>
+    <button class="btn" ontouchstart="keys['ArrowRight']=true" ontouchend="keys['ArrowRight']=false">→</button>
+    <button class="btn" ontouchstart="keys['ArrowUp']=true" ontouchend="keys['ArrowUp']=false">↑</button>
+    <button class="btn" ontouchstart="shoot()">💥</button>
+  </div>  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const loginBox = document.getElementById('loginBox');
+    const menuScreen = document.getElementById('menuScreen');
+    const cutsceneBox = document.getElementById('cutsceneBox');
+    const cutsceneText = document.getElementById('cutsceneText');
+    const cutsceneMusic = document.getElementById('cutsceneMusic');
+    const hud = document.getElementById('hud');
+    const shopBox = document.getElementById('shopBox');
+    const shopSound = document.getElementById('shopSound');
+
+    let user = '';
+    let keys = {};
+    let currentStage = 1;
+    let powers = [];
+    let showingCutscene = false;
+    let score = 100;
+
+    const maps = ['#333', '#2a2a2a', '#1a1a1a', '#444', '#113355', '#552211', '#003344', '#224422', '#550055', '#332211'];
+    const bosses = ['Dragão', 'Mutantes Zumbi', 'Super Esqueleto', 'Pé Grande', 'Rei do Gelo', 'Rei do Fogo', 'Rei do Ar', 'Rei dos Elementos', 'Super Robô', 'Rei do Raio'];
+    const powerList = ['🔥', '❄️', '⚡', '👻', '💪', '💨', '🕊️', '🧍‍♂️', '🛡️', '🌀', '🧠', '🧲', '⏳', '🌵', '💡', '🌑', '💥', '⛹️‍♂️', '☄️', '🌍'];
+    const cutscenes = [
+      'Um dragão ameaça o reino. O herói parte em sua jornada...',
+      'Os Mutantes Zumbi tomaram a cidade. O herói entra sem medo...',
+      'O cemitério ganha vida! O Super Esqueleto aparece...',
+      'No bosque gelado, o Pé Grande ruge furioso...',
+      'A fortaleza do Gelo se aproxima, o Rei aguarda...',
+      'As chamas do deserto se acendem com o Rei do Fogo...',
+      'Nos céus, o Rei do Ar surge em meio a tempestades...',
+      'Todos os elementos colidem! O Rei Supremo surge...',
+      'O laboratório secreto libera um Super Robô poderoso...',
+      'Por fim, o céu rasga com o trovão do Rei do Raio...'
+    ];
+    const cutsceneMusicLinks = [
+      'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+      'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
+      'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3'
+    ];
+
+    const allShopItems = {
+      vida: [{ name: '+10 Vida', cost: 10, action: () => buyUpgrade('vida') }],
+      dano: [{ name: '+1 Dano', cost: 10, action: () => buyUpgrade('dano') }],
+      arma: [
+        { name: 'Lança-chamas 🔥', cost: 20, action: () => buyWeapon('flame') },
+        { name: 'Gelo Congelante ❄️', cost: 20, action: () => buyWeapon('ice') }
+      ]
+    };
+
+    function showMenu() { menuScreen.style.display = 'flex'; canvas.style.display = 'none'; }
+    function showLogin() { menuScreen.style.display = 'none'; loginBox.style.display = 'flex'; }
+    function login() {
+      user = document.getElementById('username').value;
+      if (!user) return alert('Digite um nome.');
+      const saved = localStorage.getItem('progress_' + user);
+      if (saved) {
+        const data = JSON.parse(saved);
+        currentStage = data.stage;
+        powers = data.powers;
+      }
+      loginBox.style.display = 'none';
+      showCutscene(currentStage - 1);
+    }
+    function saveProgress() {
+      localStorage.setItem('progress_' + user, JSON.stringify({ stage: currentStage, powers }));
+    }
+    function showCutscene(index) {
+      cutsceneText.textContent = cutscenes[index];
+      cutsceneBox.style.display = 'flex';
+      cutsceneMusic.src = cutsceneMusicLinks[index % cutsceneMusicLinks.length];
+      cutsceneMusic.play();
+      showingCutscene = true;
+    }
+    function closeCutscene() {
+      cutsceneBox.style.display = 'none';
+      cutsceneMusic.pause();
+      showingCutscene = false;
+      startGame();
+    }
+    function startGame() {
+      canvas.style.display = 'block';
+      document.body.style.background = maps[currentStage - 1];
+      updateHUD();
+      saveProgress();
+    }
+    function updateHUD() {
+      hud.innerHTML = '';
+      powers.forEach(p => {
+        const icon = document.createElement('div');
+        icon.className = 'power-icon';
+        icon.textContent = p;
+        hud.appendChild(icon);
+      });
+    }
+    function openShop() { shopBox.style.display = 'flex'; showCategory('vida'); }
+    function closeShop() { shopBox.style.display = 'none'; }
+    function showCategory(cat) {
+      const shopItems = document.getElementById('shopItems');
+      shopItems.innerHTML = allShopItems[cat].map(item => `
+        <div class='shop-item'>
+          <span>${item.name} (${item.cost} pts)</span>
+          <button onclick='(${item.action.toString()})()'>Comprar</button>
+        </div>
+      `).join('');
+    }
+    function buyUpgrade(type) {
+      if (score >= 10) {
+        score -= 10;
+        shopSound.play();
+        alert(`Upgrade de ${type} comprado!`);
+      } else {
+        alert('Pontos insuficientes');
+      }
+    }
+    function buyWeapon(name) {
+      if (score >= 20) {
+        score -= 20;
+        shopSound.play();
+        alert(`Arma ${name} comprada!`);
+        powers.push(name === 'flame' ? '🔥' : '❄️');
+        updateHUD();
+      } else {
+        alert('Pontos insuficientes');
+      }
+    }
+    window.addEventListener('keydown', e => keys[e.key] = true);
+    window.addEventListener('keyup', e => keys[e.key] = false);
+    showMenu();
+  </script></body>
+</html>
